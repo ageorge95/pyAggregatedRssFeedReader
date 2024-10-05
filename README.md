@@ -1,4 +1,4 @@
-# pyRoboCopyGUI
+# pyAggregatedRssFeedReader
 A simple aggregator for multiple RSS feeds; It has very handy features, like:
 - it marks the already read entries
 - it will check for new entries every 5 minutes
