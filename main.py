@@ -25,6 +25,18 @@ class RSSFeedReader:
         self.load_viewed_entries()
         self.load_rss_feeds()
 
+        # Create a frame to hold the button
+        self.button_frame = tk.Frame(self.root)
+        self.button_frame.pack(pady=10)
+
+        # Create Mark All as Read button
+        self.mark_all_read_button = tk.Button(self.button_frame, text="Mark All as Read", command=self.mark_all_as_read)
+        self.mark_all_read_button.pack()
+
+        # Add a separator between button frame and content frame
+        self.separator = tk.Frame(self.root, height=2, bg="gray")
+        self.separator.pack(fill=tk.X, padx=5, pady=5)
+
         # Initial fetch and display of RSS entries
         self.check_and_display_new_entries()
 
@@ -101,7 +113,8 @@ class RSSFeedReader:
         """Display the fetched RSS entries in a scrollable frame."""
         # Clear the window
         for widget in self.root.winfo_children():
-            widget.destroy()
+            if widget is not self.button_frame and widget is not self.separator:  # Keep the button frame and separator
+                widget.destroy()
 
         # Adding a scrollable frame to hold all the entries
         scroll_frame = tk.Frame(self.root)
@@ -158,6 +171,14 @@ class RSSFeedReader:
                 read_more_label = tk.Label(entry_frame, text="Read more", fg="blue", cursor="hand2")
                 read_more_label.pack(anchor="w")
                 read_more_label.bind("<Button-1>", lambda e, url=entry['link']: webbrowser.open(url))
+
+    def mark_all_as_read(self):
+        """Mark all entries as read."""
+        for entry in self.fetch_all_feeds():
+            self.viewed_entries.add(entry['title'])
+
+        # Refresh the display to update colors
+        self.check_and_display_new_entries()
 
     def send_notification(self, new_entries):
         """Send a notification for new entries."""
