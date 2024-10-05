@@ -25,9 +25,13 @@ class RSSFeedReader:
         self.load_viewed_entries()
         self.load_rss_feeds()
 
-        # Create a frame to hold the buttons
+        # Create a frame to hold the buttons and the counter
         self.button_frame = tk.Frame(self.root)
         self.button_frame.pack(pady=10)
+
+        # Create a label to display unread entries count
+        self.unread_count_label = tk.Label(self.button_frame, text=f"Unread Entries: {self.get_unread_count()}", font=("Helvetica", 12))
+        self.unread_count_label.pack(side=tk.LEFT, padx=10)
 
         # Create Mark All as Read button
         self.mark_all_read_button = tk.Button(self.button_frame, text="Mark All as Read", command=self.mark_all_as_read)
@@ -107,6 +111,7 @@ class RSSFeedReader:
         title_label.config(fg="gray")
 
         webbrowser.open(link)
+        self.update_unread_count()
 
     def check_new_entries(self, entries):
         """Check for new entries that have not been viewed."""
@@ -183,10 +188,19 @@ class RSSFeedReader:
 
         # Refresh the display to update colors
         self.check_and_display_new_entries()
+        self.update_unread_count()
 
     def refresh_entries(self):
         """Refresh the displayed RSS entries manually."""
         self.check_and_display_new_entries()
+
+    def update_unread_count(self):
+        """Update the unread entries count label."""
+        self.unread_count_label.config(text=f"Unread Entries: {self.get_unread_count()}")
+
+    def get_unread_count(self):
+        """Get the count of unread entries."""
+        return len([entry for entry in self.fetch_all_feeds() if entry['title'] not in self.viewed_entries])
 
     def send_notification(self, new_entries):
         """Send a notification for new entries."""
@@ -218,6 +232,7 @@ class RSSFeedReader:
         new_entries = self.check_new_entries(all_entries)
         self.send_notification(new_entries)
         self.display_entries(all_entries)
+        self.update_unread_count()
 
         # Schedule the next check in 5 minutes (300000 milliseconds)
         self.root.after(300000, self.check_and_display_new_entries)
