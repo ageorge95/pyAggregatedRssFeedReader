@@ -25,13 +25,17 @@ class RSSFeedReader:
         self.load_viewed_entries()
         self.load_rss_feeds()
 
-        # Create a frame to hold the button
+        # Create a frame to hold the buttons
         self.button_frame = tk.Frame(self.root)
         self.button_frame.pack(pady=10)
 
         # Create Mark All as Read button
         self.mark_all_read_button = tk.Button(self.button_frame, text="Mark All as Read", command=self.mark_all_as_read)
-        self.mark_all_read_button.pack()
+        self.mark_all_read_button.pack(side=tk.LEFT, padx=5)
+
+        # Create Refresh button
+        self.refresh_button = tk.Button(self.button_frame, text="Refresh", command=self.refresh_entries)
+        self.refresh_button.pack(side=tk.LEFT, padx=5)
 
         # Add a separator between button frame and content frame
         self.separator = tk.Frame(self.root, height=2, bg="gray")
@@ -178,6 +182,10 @@ class RSSFeedReader:
             self.viewed_entries.add(entry['title'])
 
         # Refresh the display to update colors
+        self.check_and_display_new_entries()
+
+    def refresh_entries(self):
+        """Refresh the displayed RSS entries manually."""
         self.check_and_display_new_entries()
 
     def send_notification(self, new_entries):
