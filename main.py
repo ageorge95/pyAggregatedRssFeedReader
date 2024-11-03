@@ -6,6 +6,7 @@ import webbrowser
 import json
 import os
 from plyer import notification
+from typing import List
 from concurrent.futures import (ThreadPoolExecutor,
                                 as_completed)
 
@@ -47,6 +48,7 @@ class RSSFeedReader:
     def __init__(self):
         """Initialize the RSS feed reader."""
         self.viewed_entries = set()
+        self.cached_entries: List[datetime | List] = [0, []]
         self.rss_feeds = {}
         self.viewed_entries_file = "viewed_entries.json"
         self.rss_feeds_file = "rss_feeds.json"
@@ -107,17 +109,27 @@ class RSSFeedReader:
 
     def fetch_all_feeds(self):
         """Fetch and parse all RSS feeds."""
-        all_entries = []
-        start = datetime.now()
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            future_to_feed = [executor.submit(fetch_feed, feed_name, url,) for feed_name, url in self.rss_feeds.items()]
-            for future in as_completed(future_to_feed):
-                all_entries += future.result()
-        print(f'Fetched all RSS entries in {(datetime.now() - start).seconds,5} seconds.')
+        # BUT first check if the cache can be used
+        CACHE_REFRESH_s = 10
+        now = datetime.now()
+        cache_age_s = (now - self.cached_entries[0]).seconds if isinstance(self.cached_entries[0], datetime) else 99999999
+        if cache_age_s > 10:
+            all_entries = []
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                future_to_feed = [executor.submit(fetch_feed, feed_name, url,) for feed_name, url in self.rss_feeds.items()]
+                for future in as_completed(future_to_feed):
+                    all_entries += future.result()
+            print(f'Fetched all RSS entries in {(datetime.now() - now).seconds,5} seconds.')
 
-        # Sort entries by date, most recent first
-        all_entries.sort(key=lambda e: e['published'], reverse=True)
-        return all_entries
+            # Sort entries by date, most recent first
+            all_entries.sort(key=lambda e: e['published'], reverse=True)
+
+            # and add them to the cache and return them afterwards
+            self.cached_entries[0], self.cached_entries[1] = datetime.now(), all_entries
+            return all_entries
+        else:
+            print(f'Cache hit {cache_age_s} < {CACHE_REFRESH_s}, returning entries from cache')
+            return self.cached_entries[1]
 
     def open_entry(self, link, title, title_label):
         """Open the entry link and mark as viewed."""
