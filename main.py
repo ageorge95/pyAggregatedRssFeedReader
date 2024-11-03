@@ -6,7 +6,40 @@ import webbrowser
 import json
 import os
 from plyer import notification
+from concurrent.futures import (ThreadPoolExecutor,
+                                as_completed)
 
+def fetch_feed(feed_name, url):
+    """Fetch and parse an individual RSS feed."""
+    to_return = []
+    try:
+        print(f'{feed_name}: Fetching ...')
+        feed = feedparser.parse(url)
+        if feed.bozo:
+            raise ValueError("Feed could not be parsed")
+
+        for entry in feed.entries:
+            # Standardizing the date format
+            if 'published_parsed' in entry:
+                entry_date = datetime(*entry.published_parsed[:6])
+            else:
+                entry_date = datetime.now()  # Fallback if no date is found
+
+            # Adding feed name to each entry
+            entry_data = {
+                'title': entry.title,
+                'link': entry.link,
+                'summary': entry.summary if 'summary' in entry else '',
+                'published': entry_date,
+                'feed_name': feed_name
+            }
+            to_return.append(entry_data)
+
+    except Exception as e:
+        print(f"Error fetching {feed_name}: {e}")
+
+    print(f'{feed_name}: Fetched {len(to_return)} entries.')
+    return to_return
 
 class RSSFeedReader:
     """A simple RSS feed reader using Tkinter for GUI."""
@@ -75,31 +108,12 @@ class RSSFeedReader:
     def fetch_all_feeds(self):
         """Fetch and parse all RSS feeds."""
         all_entries = []
-        for feed_name, url in self.rss_feeds.items():
-            try:
-                feed = feedparser.parse(url)
-                if feed.bozo:
-                    raise ValueError("Feed could not be parsed")
-
-                for entry in feed.entries:
-                    # Standardizing the date format
-                    if 'published_parsed' in entry:
-                        entry_date = datetime(*entry.published_parsed[:6])
-                    else:
-                        entry_date = datetime.now()  # Fallback if no date is found
-
-                    # Adding feed name to each entry
-                    entry_data = {
-                        'title': entry.title,
-                        'link': entry.link,
-                        'summary': entry.summary if 'summary' in entry else '',
-                        'published': entry_date,
-                        'feed_name': feed_name
-                    }
-                    all_entries.append(entry_data)
-
-            except Exception as e:
-                print(f"Error fetching {feed_name}: {e}")
+        start = datetime.now()
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_feed = [executor.submit(fetch_feed, feed_name, url,) for feed_name, url in self.rss_feeds.items()]
+            for future in as_completed(future_to_feed):
+                all_entries += future.result()
+        print(f'Fetched all RSS entries in {(datetime.now() - start).seconds,5} seconds.')
 
         # Sort entries by date, most recent first
         all_entries.sort(key=lambda e: e['published'], reverse=True)
