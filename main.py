@@ -51,6 +51,8 @@ class RSSFeedReader:
         # Save viewed entries on close
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+        self.scroll_update_pending = False  # Variable to control update frequency during dragging
+
     def load_viewed_entries(self):
         """Load viewed entries from a JSON file."""
         if os.path.exists(self.viewed_entries_file):
@@ -129,26 +131,28 @@ class RSSFeedReader:
         scroll_frame = tk.Frame(self.root)
         scroll_frame.pack(fill=tk.BOTH, expand=True)
 
-        canvas = tk.Canvas(scroll_frame)
-        scrollbar = tk.Scrollbar(scroll_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas)
+        self.canvas = tk.Canvas(scroll_frame)
+        scrollbar = tk.Scrollbar(scroll_frame, orient="vertical", command=self.on_scroll)
+        scrollable_frame = tk.Frame(self.canvas)
 
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
+        scrollable_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", tags="scrollable_frame")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
 
         scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
+        self.canvas.pack(side="left", fill="both", expand=True)
 
         # Bind mouse wheel scrolling
         def on_mouse_wheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            # Limit the amount of scrolling to reduce visual glitches
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            self.root.after_idle(lambda: self.canvas.update_idletasks())  # Force redraw after scrolling
 
-        canvas.bind_all("<MouseWheel>", on_mouse_wheel)
+        # Bind the mouse wheel scroll events on Windows and MacOS
+        self.canvas.bind_all("<MouseWheel>", on_mouse_wheel)  # Windows
+        self.canvas.bind_all("<Button-4>", lambda e: on_mouse_wheel(e))  # Linux scroll up
+        self.canvas.bind_all("<Button-5>", lambda e: on_mouse_wheel(e))  # Linux scroll down
 
         # Displaying all entries in the scrollable frame
         for entry in entries:
@@ -162,8 +166,9 @@ class RSSFeedReader:
                                    cursor="hand2")
             title_label.pack(anchor="w")
             title_label.bind("<Button-1>",
-                             lambda e, url=entry['link'], title=entry['title'], label=title_label: self.open_entry(url, title,
-                                                                                                              label))
+                             lambda e, url=entry['link'], title=entry['title'], label=title_label: self.open_entry(url,
+                                                                                                                   title,
+                                                                                                                   label))
 
             date_label = tk.Label(entry_frame,
                                   text=f"Published on {entry['published'].strftime('%Y-%m-%d %H:%M')} - {entry['feed_name']}",
@@ -180,6 +185,17 @@ class RSSFeedReader:
                 read_more_label = tk.Label(entry_frame, text="Read more", fg="blue", cursor="hand2")
                 read_more_label.pack(anchor="w")
                 read_more_label.bind("<Button-1>", lambda e, url=entry['link']: webbrowser.open(url))
+
+    def on_scroll(self, *args):
+        """Throttle updates during scrollbar drag."""
+        if not self.scroll_update_pending:
+            self.scroll_update_pending = True
+            self.root.after(10, self._update_scroll, *args)
+
+    def _update_scroll(self, *args):
+        """Actual scroll update, delayed to reduce flickering."""
+        self.canvas.yview(*args)
+        self.scroll_update_pending = False  # Reset flag for next scroll
 
     def mark_all_as_read(self):
         """Mark all entries as read."""
