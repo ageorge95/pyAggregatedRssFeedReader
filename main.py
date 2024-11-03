@@ -119,7 +119,7 @@ class RSSFeedReader:
                 future_to_feed = [executor.submit(fetch_feed, feed_name, url,) for feed_name, url in self.rss_feeds.items()]
                 for future in as_completed(future_to_feed):
                     all_entries += future.result()
-            print(f'Fetched all RSS entries in {(datetime.now() - now).seconds,5} seconds.')
+            print(f'Fetched all RSS entries in {(datetime.now() - now).seconds} seconds.')
 
             # Sort entries by date, most recent first
             all_entries.sort(key=lambda e: e['published'], reverse=True)
@@ -128,7 +128,7 @@ class RSSFeedReader:
             self.cached_entries[0], self.cached_entries[1] = datetime.now(), all_entries
             return all_entries
         else:
-            print(f'Cache hit {cache_age_s} < {CACHE_REFRESH_s}, returning entries from cache')
+            print(f'Cache hit {cache_age_s}s < {CACHE_REFRESH_s}s, returning entries from cache')
             return self.cached_entries[1]
 
     def open_entry(self, link, title, title_label):
