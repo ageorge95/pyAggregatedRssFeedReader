@@ -10,6 +10,12 @@ from typing import List
 from concurrent.futures import (ThreadPoolExecutor,
                                 as_completed)
 
+def boostrap_rss_feeds():
+    if not os.path.isfile('rss_feeds.json'):
+        with open('rss_feeds.json', 'w') as file_out_handle:
+            file_out_handle.write(json.dumps({"New On Steam": "https://store.steampowered.com/feeds/newreleases.xml"},
+                                             indent=2))
+
 def fetch_feed(feed_name, url):
     """Fetch and parse an individual RSS feed."""
     to_return = []
@@ -303,7 +309,7 @@ class RSSFeedReader:
         """Run the application."""
         self.root.mainloop()
 
-
 if __name__ == "__main__":
+    boostrap_rss_feeds()
     app = RSSFeedReader()
     app.run()
