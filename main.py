@@ -61,6 +61,8 @@ class RSSFeedReader:
         self.root = tk.Tk()
         self.root.title("Aggregated RSS Feed Reader")
         self.root.geometry("900x600")
+        icon = tk.PhotoImage(file="icon.png")
+        self.root.iconphoto(True, icon)
 
         # Load viewed entries and RSS feeds from files
         self.load_viewed_entries()
