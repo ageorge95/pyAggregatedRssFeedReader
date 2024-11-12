@@ -159,7 +159,7 @@ class RSSFeedReader:
         self.viewed_entries.add(title)
 
         # Change the color of the title label to gray
-        title_label.configure(fg_color="gray")
+        title_label.configure(text_color="gray")
 
         webbrowser.open(link)
         self.update_unread_count()
