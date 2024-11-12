@@ -1,15 +1,11 @@
 from customtkinter import (CTk,
-                           CTkToplevel,
                            CTkLabel,
                            CTkButton,
                            CTkFrame,
-                           CTkOptionMenu,
                            CTkConfirmationDialog,
-                           LEFT,
-                           X,
-                           BOTH,
-                           CTkCanvas,
-                           CTkScrollbar, CTkScrollableFrame)
+                           LEFT, BOTH,
+                           X, W,
+                           CTkScrollableFrame)
 from tkinter import PhotoImage
 import feedparser
 from datetime import datetime
@@ -192,7 +188,7 @@ class RSSFeedReader:
 
             title_label = CTkLabel(entry_frame, text=entry['title'], font=("Helvetica", 14, "bold"), text_color=title_color,
                                    cursor="hand2")
-            title_label.pack(anchor="w")
+            title_label.pack(anchor=W)
             title_label.bind("<Button-1>",
                              lambda e, url=entry['link'], title=entry['title'], label=title_label: self.open_entry(url,
                                                                                                                    title,
@@ -201,17 +197,17 @@ class RSSFeedReader:
             date_label = CTkLabel(entry_frame,
                                   text=f"Published on {entry['published'].strftime('%Y-%m-%d %H:%M')} - {entry['feed_name']}",
                                   font=("Helvetica", 10), text_color="gray")
-            date_label.pack(anchor="w")
+            date_label.pack(anchor=W)
 
             # Display only the first 150 characters of the summary, with a "Read more" link
             summary_text = entry['summary'][:150] + "..." if len(entry['summary']) > 150 else entry['summary']
             summary_label = CTkLabel(entry_frame, text=summary_text, wraplength=800, justify="left",
                                      font=("Helvetica", 12))
-            summary_label.pack(anchor="w")
+            summary_label.pack(anchor=W)
 
             if len(entry['summary']) > 150:
                 read_more_label = CTkLabel(entry_frame, text="Read more", text_color="blue", cursor="hand2")
-                read_more_label.pack(anchor="w")
+                read_more_label.pack(anchor=W)
                 read_more_label.bind("<Button-1>", lambda e, url=entry['link']: webbrowser.open(url))
 
     def on_scroll(self, *args):
