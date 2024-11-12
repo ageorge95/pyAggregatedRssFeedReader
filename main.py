@@ -9,7 +9,7 @@ from customtkinter import (CTk,
                            X,
                            BOTH,
                            CTkCanvas,
-                           CTkScrollbar)
+                           CTkScrollbar, CTkScrollableFrame)
 from tkinter import PhotoImage
 import feedparser
 from datetime import datetime
@@ -177,41 +177,20 @@ class RSSFeedReader:
                 widget.destroy()
 
         # Adding a scrollable frame to hold all the entries
-        scroll_frame = CTkFrame(self.root)
+        scroll_frame = CTkScrollableFrame(self.root,
+                                          bg_color='transparent',
+                                          fg_color='transparent')
         scroll_frame.pack(fill=BOTH, expand=True)
-
-        self.canvas = CTkCanvas(scroll_frame)
-        scrollbar = CTkScrollbar(scroll_frame, orientation="vertical", command=self.on_scroll)
-        scrollable_frame = CTkFrame(self.canvas)
-
-        scrollable_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-
-        self.canvas.create_window((0, 0), window=scrollable_frame, anchor="nw", tags="scrollable_frame")
-        self.canvas.configure(yscrollcommand=scrollbar.set)
-
-        scrollbar.pack(side="right", fill="y")
-        self.canvas.pack(side="left", fill="both", expand=True)
-
-        # Bind mouse wheel scrolling
-        def on_mouse_wheel(event):
-            # Limit the amount of scrolling to reduce visual glitches
-            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-            self.root.after_idle(lambda: self.canvas.update_idletasks())  # Force redraw after scrolling
-
-        # Bind the mouse wheel scroll events on Windows and MacOS
-        self.canvas.bind_all("<MouseWheel>", on_mouse_wheel)  # Windows
-        self.canvas.bind_all("<Button-4>", lambda e: on_mouse_wheel(e))  # Linux scroll up
-        self.canvas.bind_all("<Button-5>", lambda e: on_mouse_wheel(e))  # Linux scroll down
 
         # Displaying all entries in the scrollable frame
         for entry in entries:
-            entry_frame = CTkFrame(scrollable_frame)
+            entry_frame = CTkFrame(scroll_frame)
             entry_frame.pack(fill=X, padx=10, pady=10)
 
             # Change color if the entry has been viewed
             title_color = "gray" if entry['title'] in self.viewed_entries else "blue"
 
-            title_label = CTkLabel(entry_frame, text=entry['title'], font=("Helvetica", 14, "bold"), fg_color=title_color,
+            title_label = CTkLabel(entry_frame, text=entry['title'], font=("Helvetica", 14, "bold"), text_color=title_color,
                                    cursor="hand2")
             title_label.pack(anchor="w")
             title_label.bind("<Button-1>",
@@ -221,7 +200,7 @@ class RSSFeedReader:
 
             date_label = CTkLabel(entry_frame,
                                   text=f"Published on {entry['published'].strftime('%Y-%m-%d %H:%M')} - {entry['feed_name']}",
-                                  font=("Helvetica", 10), fg_color="gray")
+                                  font=("Helvetica", 10), text_color="gray")
             date_label.pack(anchor="w")
 
             # Display only the first 150 characters of the summary, with a "Read more" link
@@ -231,7 +210,7 @@ class RSSFeedReader:
             summary_label.pack(anchor="w")
 
             if len(entry['summary']) > 150:
-                read_more_label = CTkLabel(entry_frame, text="Read more", fg_color="blue", cursor="hand2")
+                read_more_label = CTkLabel(entry_frame, text="Read more", text_color="blue", cursor="hand2")
                 read_more_label.pack(anchor="w")
                 read_more_label.bind("<Button-1>", lambda e, url=entry['link']: webbrowser.open(url))
 
