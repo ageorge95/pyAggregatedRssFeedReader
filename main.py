@@ -105,8 +105,6 @@ class RSSFeedReader:
         # Save viewed entries on close
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-        self.scroll_update_pending = False  # Variable to control update frequency during dragging
-
     def load_viewed_entries(self):
         """Load viewed entries from a JSON file."""
         if os.path.exists(self.viewed_entries_file):
@@ -209,17 +207,6 @@ class RSSFeedReader:
                 read_more_label = CTkLabel(entry_frame, text="Read more", text_color="blue", cursor="hand2")
                 read_more_label.pack(anchor=W)
                 read_more_label.bind("<Button-1>", lambda e, url=entry['link']: webbrowser.open(url))
-
-    def on_scroll(self, *args):
-        """Throttle updates during scrollbar drag."""
-        if not self.scroll_update_pending:
-            self.scroll_update_pending = True
-            self.root.after(10, self._update_scroll, *args)
-
-    def _update_scroll(self, *args):
-        """Actual scroll update, delayed to reduce flickering."""
-        self.canvas.yview(*args)
-        self.scroll_update_pending = False  # Reset flag for next scroll
 
     def mark_all_as_read(self):
         """Mark all entries as read."""
