@@ -1,5 +1,16 @@
-import tkinter as tk
-import tkinter.messagebox as messagebox
+from customtkinter import (CTk,
+                           CTkToplevel,
+                           CTkLabel,
+                           CTkButton,
+                           CTkFrame,
+                           CTkOptionMenu,
+                           CTkConfirmationDialog,
+                           LEFT,
+                           X,
+                           BOTH,
+                           CTkCanvas,
+                           CTkScrollbar)
+from tkinter import PhotoImage
 import feedparser
 from datetime import datetime
 import webbrowser
@@ -58,10 +69,10 @@ class RSSFeedReader:
         self.rss_feeds = {}
         self.viewed_entries_file = "viewed_entries.json"
         self.rss_feeds_file = "rss_feeds.json"
-        self.root = tk.Tk()
+        self.root = CTk()
         self.root.title("Aggregated RSS Feed Reader")
         self.root.geometry("900x600")
-        icon = tk.PhotoImage(file="icon.png")
+        icon = PhotoImage(file="icon.png")
         self.root.iconphoto(True, icon)
 
         # Load viewed entries and RSS feeds from files
@@ -69,28 +80,28 @@ class RSSFeedReader:
         self.load_rss_feeds()
 
         # Create a frame to hold the buttons and the counter
-        self.button_frame = tk.Frame(self.root)
+        self.button_frame = CTkFrame(self.root)
         self.button_frame.pack(pady=10)
 
         # Create a label to display unread entries count
-        self.unread_count_label = tk.Label(self.button_frame, text=f"Unread Entries: {self.get_unread_count()}", font=("Helvetica", 12))
-        self.unread_count_label.pack(side=tk.LEFT, padx=10)
+        self.unread_count_label = CTkLabel(self.button_frame, text=f"Unread Entries: {self.get_unread_count()}", font=("Helvetica", 12))
+        self.unread_count_label.pack(side=LEFT, padx=10)
 
         # Create a label to display all entries count
-        self.all_count_label = tk.Label(self.button_frame, text=f"All Entries: {self.get_all_count()}", font=("Helvetica", 12))
-        self.all_count_label.pack(side=tk.LEFT, padx=10)
+        self.all_count_label = CTkLabel(self.button_frame, text=f"All Entries: {self.get_all_count()}", font=("Helvetica", 12))
+        self.all_count_label.pack(side=LEFT, padx=10)
 
         # Create Mark All as Read button
-        self.mark_all_read_button = tk.Button(self.button_frame, text="Mark All as Read", command=self.mark_all_as_read)
-        self.mark_all_read_button.pack(side=tk.LEFT, padx=5)
+        self.mark_all_read_button = CTkButton(self.button_frame, text="Mark All as Read", command=self.mark_all_as_read)
+        self.mark_all_read_button.pack(side=LEFT, padx=5)
 
         # Create Refresh button
-        self.refresh_button = tk.Button(self.button_frame, text="Refresh", command=self.refresh_entries)
-        self.refresh_button.pack(side=tk.LEFT, padx=5)
+        self.refresh_button = CTkButton(self.button_frame, text="Refresh", command=self.refresh_entries)
+        self.refresh_button.pack(side=LEFT, padx=5)
 
         # Add a separator between button frame and content frame
-        self.separator = tk.Frame(self.root, height=2, bg="gray")
-        self.separator.pack(fill=tk.X, padx=5, pady=5)
+        self.separator = CTkFrame(self.root, height=2, bg_color="gray")
+        self.separator.pack(fill=X, padx=5, pady=5)
 
         # Initial fetch and display of RSS entries
         self.check_and_display_new_entries()
@@ -148,7 +159,7 @@ class RSSFeedReader:
         self.viewed_entries.add(title)
 
         # Change the color of the title label to gray
-        title_label.config(fg="gray")
+        title_label.configure(fg_color="gray")
 
         webbrowser.open(link)
         self.update_unread_count()
@@ -166,12 +177,12 @@ class RSSFeedReader:
                 widget.destroy()
 
         # Adding a scrollable frame to hold all the entries
-        scroll_frame = tk.Frame(self.root)
-        scroll_frame.pack(fill=tk.BOTH, expand=True)
+        scroll_frame = CTkFrame(self.root)
+        scroll_frame.pack(fill=BOTH, expand=True)
 
-        self.canvas = tk.Canvas(scroll_frame)
-        scrollbar = tk.Scrollbar(scroll_frame, orient="vertical", command=self.on_scroll)
-        scrollable_frame = tk.Frame(self.canvas)
+        self.canvas = CTkCanvas(scroll_frame)
+        scrollbar = CTkScrollbar(scroll_frame, orientation="vertical", command=self.on_scroll)
+        scrollable_frame = CTkFrame(self.canvas)
 
         scrollable_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
 
@@ -194,13 +205,13 @@ class RSSFeedReader:
 
         # Displaying all entries in the scrollable frame
         for entry in entries:
-            entry_frame = tk.Frame(scrollable_frame, pady=10)
-            entry_frame.pack(fill=tk.X, padx=10)
+            entry_frame = CTkFrame(scrollable_frame)
+            entry_frame.pack(fill=X, padx=10, pady=10)
 
             # Change color if the entry has been viewed
             title_color = "gray" if entry['title'] in self.viewed_entries else "blue"
 
-            title_label = tk.Label(entry_frame, text=entry['title'], font=("Helvetica", 14, "bold"), fg=title_color,
+            title_label = CTkLabel(entry_frame, text=entry['title'], font=("Helvetica", 14, "bold"), fg_color=title_color,
                                    cursor="hand2")
             title_label.pack(anchor="w")
             title_label.bind("<Button-1>",
@@ -208,19 +219,19 @@ class RSSFeedReader:
                                                                                                                    title,
                                                                                                                    label))
 
-            date_label = tk.Label(entry_frame,
+            date_label = CTkLabel(entry_frame,
                                   text=f"Published on {entry['published'].strftime('%Y-%m-%d %H:%M')} - {entry['feed_name']}",
-                                  font=("Helvetica", 10), fg="gray")
+                                  font=("Helvetica", 10), fg_color="gray")
             date_label.pack(anchor="w")
 
             # Display only the first 150 characters of the summary, with a "Read more" link
             summary_text = entry['summary'][:150] + "..." if len(entry['summary']) > 150 else entry['summary']
-            summary_label = tk.Label(entry_frame, text=summary_text, wraplength=800, justify="left",
+            summary_label = CTkLabel(entry_frame, text=summary_text, wraplength=800, justify="left",
                                      font=("Helvetica", 12))
             summary_label.pack(anchor="w")
 
             if len(entry['summary']) > 150:
-                read_more_label = tk.Label(entry_frame, text="Read more", fg="blue", cursor="hand2")
+                read_more_label = CTkLabel(entry_frame, text="Read more", fg_color="blue", cursor="hand2")
                 read_more_label.pack(anchor="w")
                 read_more_label.bind("<Button-1>", lambda e, url=entry['link']: webbrowser.open(url))
 
@@ -251,11 +262,11 @@ class RSSFeedReader:
 
     def update_unread_count(self):
         """Update the unread entries count label."""
-        self.unread_count_label.config(text=f"Unread Entries: {self.get_unread_count()}")
+        self.unread_count_label.configure(text=f"Unread Entries: {self.get_unread_count()}")
 
     def update_all_count(self):
         """Update the unread entries count label."""
-        self.all_count_label.config(text=f"All Entries: {self.get_all_count()}")
+        self.all_count_label.configure(text=f"All Entries: {self.get_all_count()}")
 
     def get_unread_count(self):
         """Get the count of unread entries."""
@@ -303,7 +314,7 @@ class RSSFeedReader:
 
     def on_closing(self):
         """Confirm exit and save viewed entries."""
-        if messagebox.askokcancel("Quit", "Do you really want to quit?"):
+        if CTkConfirmationDialog(title="Quit", message="Do you really want to quit?").get_selection():
             self.save_viewed_entries()
             self.root.destroy()
 
