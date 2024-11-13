@@ -1,7 +1,6 @@
 from sys import version_info
 
 invalid_python_versions = [
-    '3.13' # Tkinter issues in python 3.13.0
 ]
 
 current_python_version = f'{version_info.major}.{version_info.minor}'
