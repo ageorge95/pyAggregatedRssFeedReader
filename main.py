@@ -1,290 +1,306 @@
-from customtkinter import (CTk,
-                           CTkLabel,
-                           CTkButton,
-                           CTkFrame,
-                           CTkConfirmationDialog,
-                           LEFT, BOTH,
-                           X, W,
-                           CTkScrollableFrame)
-from tkinter import PhotoImage
-import feedparser
-from datetime import datetime
-import webbrowser
+import sys
+import time
 import json
-import os
-from plyer import notification
-from typing import List
-from concurrent.futures import (ThreadPoolExecutor,
-                                as_completed)
+import feedparser
+from PySide6.QtCore import Qt, Signal, QTimer, QThread
+from PySide6.QtWidgets import QApplication, QWidget, QLabel, QScrollArea, QMainWindow, QPushButton, \
+    QMessageBox, QHBoxLayout, QFrame, QVBoxLayout
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import webbrowser
+from datetime import datetime
+import re
+import ctypes
+from ctypes import wintypes
+from threading import Thread
 
-def boostrap_rss_feeds():
-    if not os.path.isfile('rss_feeds.json'):
-        with open('rss_feeds.json', 'w') as file_out_handle:
-            file_out_handle.write(json.dumps({"New On Steam": "https://store.steampowered.com/feeds/newreleases.xml"},
-                                             indent=2))
+# Constants for taskbar flashing
+FLASHW_TRAY = 0x2
+FLASHW_TIMERNOFG = 0xC
 
-def fetch_feed(feed_name, url):
-    """Fetch and parse an individual RSS feed."""
-    to_return = []
-    try:
-        print(f'{feed_name}: Fetching ...')
-        feed = feedparser.parse(url)
-        if feed.bozo:
-            raise ValueError("Feed could not be parsed")
+class FLASHWINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT),
+                ("hwnd", wintypes.HWND),
+                ("dwFlags", wintypes.DWORD),
+                ("uCount", wintypes.UINT),
+                ("dwTimeout", wintypes.DWORD)]
 
-        for entry in feed.entries:
-            # Standardizing the date format
-            if 'published_parsed' in entry:
-                entry_date = datetime(*entry.published_parsed[:6])
-            else:
-                entry_date = datetime.now()  # Fallback if no date is found
+# Load user32.dll for the FlashWindowEx function
+user32 = ctypes.windll.user32
 
-            # Adding feed name to each entry
-            entry_data = {
-                'title': entry.title,
-                'link': entry.link,
-                'summary': entry.summary if 'summary' in entry else '',
-                'published': entry_date,
-                'feed_name': feed_name
-            }
-            to_return.append(entry_data)
+def flash_taskbar_icon(window_handle):
+    """Flashes the taskbar icon when there are unread entries."""
+    print('Flashing', window_handle)
+    fInfo = FLASHWINFO(
+        cbSize=ctypes.sizeof(FLASHWINFO),
+        hwnd=window_handle,
+        dwFlags=FLASHW_TRAY | FLASHW_TIMERNOFG,
+        uCount=3,  # Number of flashes
+        dwTimeout=0
+    )
+    user32.FlashWindowEx(ctypes.byref(fInfo))
 
-    except Exception as e:
-        print(f"Error fetching {feed_name}: {e}")
+def extract_title(full_text):
+    """Extract the title text from an HTML link within the given text."""
+    match = re.search(r"<a[^>]*>(.*?)</a>", full_text)
+    return match.group(1) if match else None
 
-    print(f'{feed_name}: Fetched {len(to_return)} entries.')
-    return to_return
+class FeedFetcher(QThread):
+    finished = Signal(list)  # Signal to emit the fetched entries once the thread finishes
 
-class RSSFeedReader:
-    """A simple RSS feed reader using Tkinter for GUI."""
+    def __init__(self, feeds):
+        super().__init__()
+        self.feeds = feeds
+
+    def run(self):
+        entries = []
+
+        with ThreadPoolExecutor() as executor:
+            futures = {executor.submit(self.fetch_feed, url): name for name, url in self.feeds.items()}
+            for future in as_completed(futures):
+                feed_name = futures[future]
+                try:
+                    feed = future.result()
+                    for entry in feed.entries:
+                        entries.append((feed_name, entry))
+                except Exception as e:
+                    print(f"Failed to fetch {feed_name}: {e}")
+
+        entries.sort(key=lambda x: x[1].published_parsed, reverse=True)
+        self.finished.emit(entries)  # Emit the signal with fetched entries
+
+    def fetch_feed(self, url):
+        return feedparser.parse(url)
+
+
+class RSSReader(QMainWindow):
+    new_entries_signal = Signal(list)  # Signal to pass the fetched entries to the main thread
 
     def __init__(self):
-        """Initialize the RSS feed reader."""
-        self.viewed_entries = set()
-        self.cached_entries: List[datetime | List] = [0, []]
-        self.rss_feeds = {}
+        super().__init__()
+        self.setWindowTitle("RSS Feed Reader")
+        self.resize(1200, 600)
+
+        # Set the file path to store viewed entries
         self.viewed_entries_file = "viewed_entries.json"
-        self.rss_feeds_file = "rss_feeds.json"
-        self.root = CTk()
-        self.root.title("Aggregated RSS Feed Reader")
-        self.root.geometry("900x600")
-        icon = PhotoImage(file="icon.png")
-        self.root.iconphoto(True, icon)
+        self.viewed_entries = self.load_viewed_entries()  # Load viewed entries from file
 
-        # Load viewed entries and RSS feeds from files
-        self.load_viewed_entries()
-        self.load_rss_feeds()
+        # Load feeds from JSON
+        self.rss_feeds_file = 'rss_feeds.json'
+        self.feeds = self.load_rss_feeds()
 
-        # Create a frame to hold the buttons and the counter
-        self.button_frame = CTkFrame(self.root)
-        self.button_frame.pack(pady=10)
+        # Setup main layout
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        self.main_layout = QVBoxLayout(self.central_widget)
 
-        # Create a label to display unread entries count
-        self.unread_count_label = CTkLabel(self.button_frame, text=f"Unread Entries: {self.get_unread_count()}", font=("Helvetica", 12))
-        self.unread_count_label.pack(side=LEFT, padx=10)
+        # Add labels for total and unread entries at the top (outside scroll area)
+        self.total_label = QLabel("Total Entries: 0")
+        self.unread_label = QLabel("Unread Entries: 0")
 
-        # Create a label to display all entries count
-        self.all_count_label = CTkLabel(self.button_frame, text=f"All Entries: {self.get_all_count()}", font=("Helvetica", 12))
-        self.all_count_label.pack(side=LEFT, padx=10)
+        # Set label alignment and add them in a horizontal layout
+        self.total_label.setAlignment(Qt.AlignCenter)
+        self.unread_label.setAlignment(Qt.AlignCenter)
+        label_layout = QHBoxLayout()
+        label_layout.addWidget(self.total_label)
+        label_layout.addWidget(self.unread_label)
 
-        # Create Mark All as Read button
-        self.mark_all_read_button = CTkButton(self.button_frame, text="Mark All as Read", command=self.mark_all_as_read)
-        self.mark_all_read_button.pack(side=LEFT, padx=5)
+        # Add label layout to the main layout
+        self.main_layout.addLayout(label_layout)
 
-        # Create Refresh button
-        self.refresh_button = CTkButton(self.button_frame, text="Refresh", command=self.refresh_entries)
-        self.refresh_button.pack(side=LEFT, padx=5)
+        # Button layout for Refresh and Mark All as Read buttons
+        button_layout = QHBoxLayout()
 
-        # Add a separator between button frame and content frame
-        self.separator = CTkFrame(self.root, height=2, bg_color="gray")
-        self.separator.pack(fill=X, padx=5, pady=5)
+        # Add "Mark All as Read" button
+        self.mark_all_button = QPushButton("Mark All as Read")
+        self.mark_all_button.clicked.connect(self.mark_all_as_read)
+        button_layout.addWidget(self.mark_all_button)
 
-        # Initial fetch and display of RSS entries
-        self.check_and_display_new_entries()
+        # Add "Refresh Feeds" button
+        self.refresh_button = QPushButton("Refresh Feeds")
+        self.refresh_button.clicked.connect(self.refresh_feeds)
+        button_layout.addWidget(self.refresh_button)
 
-        # Save viewed entries on close
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        # Add button layout to the main layout
+        self.main_layout.addLayout(button_layout)
+
+        # Scroll area for feed display
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.main_layout.addWidget(self.scroll_area)
+
+        # Container widget within scroll area
+        self.feed_container = QWidget()
+        self.feed_layout = QVBoxLayout(self.feed_container)
+        self.feed_layout.setSpacing(50)
+        self.scroll_area.setWidget(self.feed_container)
+
+        # Timer to simulate refresh the RSS feed entries
+        self.timer1 = QTimer(self)
+        self.timer1.timeout.connect(self.refresh_feeds)
+        self.timer1.start(30*60*1000)  # Update every 30 minutes
+
+        # Timer to flash the taskbar icon if there are unread entries
+        self.unread_entries = 0
+        self.timer2 = QTimer(self)
+        self.timer2.timeout.connect(self.update_unread_entries)
+        self.timer2.start(5000)  # Update every 5 seconds
+
+        # Connect the signal to a method that will update the GUI
+        self.new_entries_signal.connect(self.update_feed_entries)
+
+        # Display the feeds
+        self.refresh_feeds()
+
+    def update_unread_entries(self):
+        if self.unread_entries > 0:
+            flash_taskbar_icon(self.winId())  # Flash the taskbar icon if unread entries exist
+
+    def load_rss_feeds(self):
+        """Load RSS feed URLs from a JSON file."""
+        try:
+            with open(self.rss_feeds_file, "r") as file:
+                return json.load(file)
+        except FileNotFoundError:
+            QMessageBox.warning(self, "Warning", f"File {self.rss_feeds_file} not found.")
+            return {}
+        except json.JSONDecodeError:
+            QMessageBox.critical(self, "Error", f"Error reading {self.rss_feeds_file}.")
+            return {}
 
     def load_viewed_entries(self):
         """Load viewed entries from a JSON file."""
-        if os.path.exists(self.viewed_entries_file):
-            with open(self.viewed_entries_file, 'r') as file:
-                self.viewed_entries = set(json.load(file))
+        try:
+            with open(self.viewed_entries_file, "r") as file:
+                return set(json.load(file))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return set()
 
     def save_viewed_entries(self):
         """Save viewed entries to a JSON file."""
-        with open(self.viewed_entries_file, 'w') as file:
-            json.dump(list(self.viewed_entries), file)
+        with open(self.viewed_entries_file, "w") as file:
+            json.dump(list(self.viewed_entries), file, indent=2)
 
-    def load_rss_feeds(self):
-        """Load RSS feeds from a JSON file."""
-        if os.path.exists(self.rss_feeds_file):
-            with open(self.rss_feeds_file, 'r') as file:
-                self.rss_feeds = json.load(file)
-        else:
-            print(f"Warning: {self.rss_feeds_file} not found. Using empty feed list.")
+    def fetch_feed(self, url):
+        """Fetch and parse a single RSS feed."""
+        return feedparser.parse(url)
 
-    def fetch_all_feeds(self):
-        """Fetch and parse all RSS feeds."""
-        # BUT first check if the cache can be used
-        CACHE_REFRESH_s = 10
-        now = datetime.now()
-        cache_age_s = (now - self.cached_entries[0]).seconds if isinstance(self.cached_entries[0], datetime) else 99999999
-        if cache_age_s > 10:
-            all_entries = []
-            with ThreadPoolExecutor(max_workers=4) as executor:
-                future_to_feed = [executor.submit(fetch_feed, feed_name, url,) for feed_name, url in self.rss_feeds.items()]
-                for future in as_completed(future_to_feed):
-                    all_entries += future.result()
-            print(f'Fetched all RSS entries in {(datetime.now() - now).seconds} seconds.')
+    def update_feed_entries(self, entries):
+        """Update the feed entries in the GUI."""
+        # Clear existing feed entries
+        for i in reversed(range(self.feed_layout.count())):
+            widget = self.feed_layout.itemAt(i).widget()
+            if widget is not None:
+                widget.deleteLater()
 
-            # Sort entries by date, most recent first
-            all_entries.sort(key=lambda e: e['published'], reverse=True)
+        # Count unread entries and update the labels
+        total_entries = len(entries)
+        self.unread_entries = sum(1 for _, entry in entries if entry.get("title") not in self.viewed_entries)
 
-            # and add them to the cache and return them afterwards
-            self.cached_entries[0], self.cached_entries[1] = datetime.now(), all_entries
-            return all_entries
-        else:
-            print(f'Cache hit {cache_age_s}s < {CACHE_REFRESH_s}s, returning entries from cache')
-            return self.cached_entries[1]
+        self.total_label.setText(f"Total Entries: {total_entries}")
+        self.unread_label.setText(f"Unread Entries: {self.unread_entries}")
 
-    def open_entry(self, link, title, title_label):
-        """Open the entry link and mark as viewed."""
-        self.viewed_entries.add(title)
+        # Display each entry in the GUI
+        for feed_name, entry in entries:
+            border_color = "grey" if entry.title in self.viewed_entries else "blue"
+            self.entry_container = QFrame()
+            self.entry_container.setStyleSheet(f"""
+                        QFrame {{
+                            background-color: #f5f5f5;
+                            border: 2px solid {border_color};
+                            border-radius: 10px;
+                            padding: 10px;
+                        }}
+                    """)
+            self.container_layout = QVBoxLayout(self.entry_container)
+            self.container_layout.setSpacing(1)
 
-        # Change the color of the title label to gray
-        title_label.configure(text_color="gray")
+            self.entry_widget = QLabel(f"<b>{feed_name}</b>: <a href='{entry.link}'>{entry.title}</a>")
+            self.entry_widget.setTextFormat(Qt.RichText)
+            self.entry_widget.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            self.entry_widget.setOpenExternalLinks(False)
 
-        webbrowser.open(link)
-        self.update_unread_count()
+            self.entry_widget.linkActivated.connect(
+                lambda _, title=entry.title, container=self.entry_container: self.on_entry_click(title, container, entry.link))
 
-    def check_new_entries(self, entries):
-        """Check for new entries that have not been viewed."""
-        new_entries = [entry for entry in entries if entry['title'] not in self.viewed_entries]
-        return new_entries
+            self.preview_text = entry.get("summary") or entry.get("description") or "No preview available."
+            self.preview_widget = QLabel(self.preview_text[:200] + '<br>...')
+            self.preview_widget.setWordWrap(True)
+            self.preview_widget.setTextFormat(Qt.RichText)
+            self.preview_widget.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            self.preview_widget.setOpenExternalLinks(False)
+            self.preview_widget.setStyleSheet("font-size: 10pt; color: gray;")
 
-    def display_entries(self, entries):
-        """Display the fetched RSS entries in a scrollable frame."""
-        # Clear the window
-        for widget in self.root.winfo_children():
-            if widget is not self.button_frame and widget is not self.separator:  # Keep the button frame and separator
-                widget.destroy()
+            self.entry_date = datetime(*entry.published_parsed[:6]).strftime("%Y-%m-%d %H:%M:%S")
+            self.date_widget = QLabel(f"Date: {self.entry_date}")
+            self.date_widget.setStyleSheet("font-size: 9pt; color: #666;")
 
-        # Adding a scrollable frame to hold all the entries
-        scroll_frame = CTkScrollableFrame(self.root,
-                                          bg_color='transparent',
-                                          fg_color='transparent')
-        scroll_frame.pack(fill=BOTH, expand=True)
+            self.container_layout.addWidget(self.entry_widget)
+            self.container_layout.addWidget(self.date_widget)
+            self.container_layout.addWidget(self.preview_widget)
+            self.feed_layout.addWidget(self.entry_container)
 
-        # Displaying all entries in the scrollable frame
-        for entry in entries:
-            entry_frame = CTkFrame(scroll_frame)
-            entry_frame.pack(fill=X, padx=10, pady=10)
+        # Re-enable buttons after feed is refreshed
+        self.mark_all_button.setDisabled(False)
+        self.refresh_button.setDisabled(False)
 
-            # Change color if the entry has been viewed
-            title_color = "gray" if entry['title'] in self.viewed_entries else "blue"
+    def refresh_feeds(self):
+        """Refresh and display all feeds, sorted by date."""
+        self.mark_all_button.setDisabled(True)
+        self.refresh_button.setDisabled(True)
 
-            title_label = CTkLabel(entry_frame, text=entry['title'], font=("Helvetica", 14, "bold"), text_color=title_color,
-                                   cursor="hand2")
-            title_label.pack(anchor=W)
-            title_label.bind("<Button-1>",
-                             lambda e, url=entry['link'], title=entry['title'], label=title_label: self.open_entry(url,
-                                                                                                                   title,
-                                                                                                                   label))
+        # Start the FeedFetcher thread
+        self.fetcher_thread = FeedFetcher(self.feeds)
+        self.fetcher_thread.finished.connect(self.new_entries_signal.emit)  # Connect the signal
+        self.fetcher_thread.start()
 
-            date_label = CTkLabel(entry_frame,
-                                  text=f"Published on {entry['published'].strftime('%Y-%m-%d %H:%M')} - {entry['feed_name']}",
-                                  font=("Helvetica", 10), text_color="gray")
-            date_label.pack(anchor=W)
-
-            # Display only the first 150 characters of the summary, with a "Read more" link
-            summary_text = entry['summary'][:150] + "..." if len(entry['summary']) > 150 else entry['summary']
-            summary_label = CTkLabel(entry_frame, text=summary_text, wraplength=800, justify="left",
-                                     font=("Helvetica", 12))
-            summary_label.pack(anchor=W)
-
-            if len(entry['summary']) > 150:
-                read_more_label = CTkLabel(entry_frame, text="Read more", text_color="blue", cursor="hand2")
-                read_more_label.pack(anchor=W)
-                read_more_label.bind("<Button-1>", lambda e, url=entry['link']: webbrowser.open(url))
+    def on_entry_click(self, title, entry_container, entry_link):
+        """Handle link click to mark the entry as read and update border color."""
+        webbrowser.open(entry_link)
+        if title not in self.viewed_entries:
+            self.viewed_entries.add(title)
+            # Change the border color of the clicked entry container to grey
+            entry_container.setStyleSheet("""
+                QFrame {
+                    background-color: #f5f5f5;
+                    border: 2px solid grey;
+                    border-radius: 10px;
+                    padding: 10px;
+                }
+            """)
+            # Save viewed entries after marking this entry as read
+            self.save_viewed_entries()
 
     def mark_all_as_read(self):
-        """Mark all entries as read."""
-        for entry in self.fetch_all_feeds():
-            self.viewed_entries.add(entry['title'])
+        """Mark all displayed entries as read and update unread count."""
+        for i in range(self.feed_layout.count()):
+            frame = self.feed_layout.itemAt(i).widget()
+            if isinstance(frame, QFrame):
+                # Access the layout of each frame to find the title label
+                container_layout = frame.layout()
+                title_label = container_layout.itemAt(0).widget()
+                if isinstance(title_label, QLabel):
+                    # Extract the title from the label's HTML content
+                    title_text = extract_title(title_label.text())
+                    self.viewed_entries.add(title_text)
 
-        # Refresh the display to update colors
-        self.check_and_display_new_entries()
-        self.update_unread_count()
-        self.update_all_count()
+                    # Change the border color of the frame to grey
+                    frame.setStyleSheet("""
+                        QFrame {
+                            background-color: #f5f5f5;
+                            border: 2px solid grey;
+                            border-radius: 10px;
+                            padding: 10px;
+                        }
+                    """)
 
-    def refresh_entries(self):
-        """Refresh the displayed RSS entries manually."""
-        self.check_and_display_new_entries()
+        # Save viewed entries and update unread count
+        self.save_viewed_entries()
+        self.unread_entries = 0
+        self.unread_label.setText(f"Unread Entries: {self.unread_entries}")
 
-    def update_unread_count(self):
-        """Update the unread entries count label."""
-        self.unread_count_label.configure(text=f"Unread Entries: {self.get_unread_count()}")
-
-    def update_all_count(self):
-        """Update the unread entries count label."""
-        self.all_count_label.configure(text=f"All Entries: {self.get_all_count()}")
-
-    def get_unread_count(self):
-        """Get the count of unread entries."""
-        return len([entry for entry in self.fetch_all_feeds() if entry['title'] not in self.viewed_entries])
-
-    def get_all_count(self):
-        """Get the count of unread entries."""
-        return len([entry for entry in self.fetch_all_feeds()])
-
-    def send_notification(self, new_entries):
-        """Send a notification for new entries."""
-        if new_entries:
-            # Gather the titles
-            titles = [entry['title'] for entry in new_entries]
-
-            # Limit to 3 titles and create a message
-            limited_titles = titles[:3]  # Take the first 3 entries
-            message = "\n".join(limited_titles)
-
-            # If there are more than 3 entries, indicate that there are more
-            if len(titles) > 3:
-                message += "\n...and more"
-
-            # Ensure the message does not exceed 256 characters
-            if len(message) > 256:
-                message = message[:253] + "..."  # Allow space for ellipsis
-
-            notification.notify(
-                title="New RSS Entries Available",
-                message=f"You have new unread entries:\n{message}",
-                app_name="RSS Feed Reader"
-            )
-
-    def check_and_display_new_entries(self):
-        """Check for new entries and update the display."""
-        all_entries = self.fetch_all_feeds()
-        new_entries = self.check_new_entries(all_entries)
-        self.send_notification(new_entries)
-        self.display_entries(all_entries)
-        self.update_unread_count()
-        self.update_all_count()
-
-        # Schedule the next check in 5 minutes (300000 milliseconds)
-        self.root.after(300000, self.check_and_display_new_entries)
-
-    def on_closing(self):
-        """Confirm exit and save viewed entries."""
-        if CTkConfirmationDialog(title="Quit", message="Do you really want to quit?").get_selection():
-            self.save_viewed_entries()
-            self.root.destroy()
-
-    def run(self):
-        """Run the application."""
-        self.root.mainloop()
 
 if __name__ == "__main__":
-    boostrap_rss_feeds()
-    app = RSSFeedReader()
-    app.run()
+    app = QApplication(sys.argv)
+    reader = RSSReader()
+    reader.show()
+    sys.exit(app.exec())
