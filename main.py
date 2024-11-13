@@ -36,7 +36,6 @@ user32 = ctypes.windll.user32
 
 def flash_taskbar_icon(window_handle):
     """Flashes the taskbar icon when there are unread entries."""
-    print('Flashing', window_handle)
     fInfo = FLASHWINFO(
         cbSize=ctypes.sizeof(FLASHWINFO),
         hwnd=window_handle,
@@ -77,7 +76,6 @@ class FeedFetcher(QThread):
 
     def fetch_feed(self, url):
         return feedparser.parse(url)
-
 
 class RSSReader(QMainWindow):
     new_entries_signal = Signal(list)  # Signal to pass the fetched entries to the main thread
@@ -304,7 +302,6 @@ class RSSReader(QMainWindow):
         self.save_viewed_entries()
         self.unread_entries = 0
         self.unread_label.setText(f"Unread Entries: {self.unread_entries}")
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
