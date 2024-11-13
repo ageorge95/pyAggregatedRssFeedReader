@@ -1,4 +1,5 @@
 import sys
+import os
 import json
 import feedparser
 import webbrowser
@@ -81,14 +82,20 @@ class FeedFetcher(QThread):
     def fetch_feed(self, url):
         return feedparser.parse(url)
 
+def get_running_path(relative_path):
+    if '_internal' in os.listdir():
+        return os.path.join('_internal', relative_path)
+    else:
+        return relative_path
+
 class RSSReader(QMainWindow):
     new_entries_signal = Signal(list)  # Signal to pass the fetched entries to the main thread
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("RSS Feed Reader")
+        self.setWindowTitle("RSS Feed Reader V"+open(get_running_path('version.txt'), 'r').read())
         self.resize(1200, 600)
-        self.setWindowIcon(QIcon('icon.png'))
+        self.setWindowIcon(QIcon(get_running_path('icon.ico')))
 
         # Set the file path to store viewed entries
         self.viewed_entries_file = "viewed_entries.json"
