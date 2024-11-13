@@ -1,17 +1,24 @@
 import sys
-import time
 import json
 import feedparser
-from PySide6.QtCore import Qt, Signal, QTimer, QThread
-from PySide6.QtWidgets import QApplication, QWidget, QLabel, QScrollArea, QMainWindow, QPushButton, \
-    QMessageBox, QHBoxLayout, QFrame, QVBoxLayout
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import webbrowser
-from datetime import datetime
 import re
 import ctypes
+from PySide6.QtCore import Qt, Signal, QTimer, QThread
+from PySide6.QtWidgets import (QApplication,
+                               QWidget,
+                               QLabel,
+                               QScrollArea,
+                               QMainWindow,
+                               QPushButton,
+                               QMessageBox,
+                               QHBoxLayout,
+                               QFrame,
+                               QVBoxLayout)
+from concurrent.futures import (ThreadPoolExecutor,
+                                as_completed)
+from datetime import datetime
 from ctypes import wintypes
-from threading import Thread
 
 # Constants for taskbar flashing
 FLASHW_TRAY = 0x2
