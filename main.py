@@ -4,7 +4,11 @@ import feedparser
 import webbrowser
 import re
 import ctypes
-from PySide6.QtCore import Qt, Signal, QTimer, QThread
+from PySide6.QtCore import (Qt,
+                            Signal,
+                            QTimer,
+                            QThread)
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QApplication,
                                QWidget,
                                QLabel,
@@ -84,6 +88,7 @@ class RSSReader(QMainWindow):
         super().__init__()
         self.setWindowTitle("RSS Feed Reader")
         self.resize(1200, 600)
+        self.setWindowIcon(QIcon('icon.png'))
 
         # Set the file path to store viewed entries
         self.viewed_entries_file = "viewed_entries.json"
