@@ -280,6 +280,9 @@ class RSSReader(QMainWindow):
             # Save viewed entries after marking this entry as read
             self.save_viewed_entries()
 
+            self.unread_entries -= 1
+            self.unread_label.setText(f"Unread Entries: {self.unread_entries}")
+
     def mark_all_as_read(self):
         """Mark all displayed entries as read and update unread count."""
         for i in range(self.feed_layout.count()):
