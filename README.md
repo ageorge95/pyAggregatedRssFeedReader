@@ -6,6 +6,7 @@ A simple aggregator for multiple RSS feeds; It has very handy features, like:
 - can set all the entries as read (via an easy-to-use button)
 - can manually refresh all feeds (via an easy-to-use button)
 - persistent history for all read entries
+- the taskbar icon will flash if there are unread entries
 
 # Usage
 - [end-user] Can be used via the bundled executable (available in [Releases](https://github.com/ageorge95/pyAggregatedRssFeedReader/releases))
