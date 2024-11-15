@@ -88,10 +88,18 @@ def get_running_path(relative_path):
     else:
         return relative_path
 
+def boostrap_rss_feeds():
+    if not os.path.isfile('rss_feeds.json'):
+        with open('rss_feeds.json', 'w') as file_out_handle:
+            file_out_handle.write(json.dumps({"New On Steam": "https://store.steampowered.com/feeds/newreleases.xml"},
+                                             indent=2))
+
 class RSSReader(QMainWindow):
     new_entries_signal = Signal(list)  # Signal to pass the fetched entries to the main thread
 
     def __init__(self):
+        boostrap_rss_feeds()
+
         super().__init__()
         self.setWindowTitle("RSS Feed Reader V"+open(get_running_path('version.txt'), 'r').read())
         self.resize(1200, 600)
