@@ -239,13 +239,17 @@ class RSSReader(QMainWindow):
             self.container_layout = QVBoxLayout(self.entry_container)
             self.container_layout.setSpacing(1)
 
-            self.entry_widget = QLabel(f"<b>{feed_name}</b>: <a href='{entry.link}'>{entry.title}</a>")
-            self.entry_widget.setTextFormat(Qt.RichText)
-            self.entry_widget.setTextInteractionFlags(Qt.TextBrowserInteraction)
-            self.entry_widget.setOpenExternalLinks(False)
+            entry_widget = QLabel(f"<b>{feed_name}</b>: <a href='{entry.link}'>{entry.title}</a>")
+            entry_widget.setTextFormat(Qt.RichText)
+            entry_widget.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            entry_widget.setOpenExternalLinks(False)
 
-            self.entry_widget.linkActivated.connect(
-                lambda _, title=entry.title, container=self.entry_container: self.on_entry_click(title, container, entry.link))
+            entry_widget.linkActivated.connect(
+                lambda _,
+                       title=entry.title,
+                       container=self.entry_container,
+                       link=entry.link:
+                self.on_entry_click(title, container, link))
 
             self.preview_text = entry.get("summary") or entry.get("description") or "No preview available."
             self.preview_widget = QLabel(self.preview_text[:200] + '<br>...')
@@ -259,7 +263,7 @@ class RSSReader(QMainWindow):
             self.date_widget = QLabel(f"Date: {self.entry_date}")
             self.date_widget.setStyleSheet("font-size: 9pt; color: #666;")
 
-            self.container_layout.addWidget(self.entry_widget)
+            self.container_layout.addWidget(entry_widget)
             self.container_layout.addWidget(self.date_widget)
             self.container_layout.addWidget(self.preview_widget)
             self.feed_layout.addWidget(self.entry_container)
