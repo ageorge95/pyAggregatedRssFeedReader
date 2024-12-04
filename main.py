@@ -118,18 +118,21 @@ class RSSReader(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
 
-        # Add labels for total and unread entries at the top (outside scroll area)
+        # Add labels for total/ unread entries and last refresh datetime at the top (outside scroll area)
+        self.last_refresh_label = QLabel("Last refresh done at: TBA")
         self.total_label = QLabel("Total Entries: 0")
         self.unread_label = QLabel("Unread Entries: 0")
-
-        # Set label alignment and add them in a horizontal layout
+        self.last_refresh_label.setAlignment(Qt.AlignCenter)
         self.total_label.setAlignment(Qt.AlignCenter)
         self.unread_label.setAlignment(Qt.AlignCenter)
+
+        # Prepare the horizontal are for total_label and unread_label
         label_layout = QHBoxLayout()
         label_layout.addWidget(self.total_label)
         label_layout.addWidget(self.unread_label)
 
-        # Add label layout to the main layout
+        # Add last_refresh_label and label_layout to the main layout
+        self.main_layout.addWidget(self.last_refresh_label)
         self.main_layout.addLayout(label_layout)
 
         # Button layout for Refresh and Mark All as Read buttons
@@ -221,6 +224,7 @@ class RSSReader(QMainWindow):
         total_entries = len(entries)
         self.unread_entries = sum(1 for _, entry in entries if entry.get("title") not in self.viewed_entries)
 
+        self.last_refresh_label.setText(f"Last refresh done at: {datetime.now().strftime("%d-%b-%Y %H:%M:%S")}")
         self.total_label.setText(f"Total Entries: {total_entries}")
         self.unread_label.setText(f"Unread Entries: {self.unread_entries}")
 
