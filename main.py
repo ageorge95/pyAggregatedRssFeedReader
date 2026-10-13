@@ -127,7 +127,7 @@ class RSSReader(QMainWindow):
 
         super().__init__()
         self.setWindowTitle("RSS Feed Reader V"+open(get_running_path('version.txt'), 'r').read())
-        self.resize(1200, 600)
+        self.resize(1600, 600)
         self.setWindowIcon(QIcon(get_running_path('icon.ico')))
 
         # Set the file path to store viewed entries
