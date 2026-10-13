@@ -3,6 +3,7 @@ import os
 import json
 import feedparser
 import webbrowser
+import calendar
 import re
 import ctypes
 from PySide6.QtCore import (Qt,
@@ -55,6 +56,21 @@ def extract_title(full_text):
     match = re.search(r"<a[^>]*>(.*?)</a>", full_text)
     return match.group(1) if match else None
 
+def get_entry_date_parsed(entry):
+    """Return a parsed time struct for an entry, falling back to updated/created dates."""
+    for attr in ("published_parsed", "updated_parsed", "created_parsed"):
+        value = getattr(entry, attr, None)
+        if value is not None:
+            return value
+    # FeedParserDict also supports dict-style access.
+    getter = getattr(entry, "get", None)
+    if callable(getter):
+        for key in ("published_parsed", "updated_parsed", "created_parsed"):
+            value = getter(key)
+            if value is not None:
+                return value
+    return None
+
 class FeedFetcher(QThread):
     finished = Signal(list)  # Signal to emit the fetched entries once the thread finishes
 
@@ -76,7 +92,16 @@ class FeedFetcher(QThread):
                 except Exception as e:
                     print(f"Failed to fetch {feed_name}: {e}")
 
-        entries.sort(key=lambda x: x[1].published_parsed, reverse=True)
+        def _sort_key(item):
+            parsed = get_entry_date_parsed(item[1])
+            if parsed is None:
+                return 0
+            try:
+                return calendar.timegm(parsed)
+            except (TypeError, ValueError, OverflowError):
+                return 0
+
+        entries.sort(key=_sort_key, reverse=True)
         self.finished.emit(entries)  # Emit the signal with fetched entries
 
     def fetch_feed(self, url):
@@ -263,7 +288,11 @@ class RSSReader(QMainWindow):
             self.preview_widget.setOpenExternalLinks(False)
             self.preview_widget.setStyleSheet("font-size: 10pt; color: gray;")
 
-            self.entry_date = datetime(*entry.published_parsed[:6]).strftime("%Y-%m-%d %H:%M:%S")
+            parsed_date = get_entry_date_parsed(entry)
+            try:
+                self.entry_date = datetime(*parsed_date[:6]).strftime("%Y-%m-%d %H:%M:%S") if parsed_date is not None else "Unknown date"
+            except (TypeError, ValueError):
+                self.entry_date = "Unknown date"
             self.date_widget = QLabel(f"Date: {self.entry_date}")
             self.date_widget.setStyleSheet("font-size: 9pt; color: #666;")
 
