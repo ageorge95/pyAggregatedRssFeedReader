@@ -6,6 +6,8 @@ import webbrowser
 import calendar
 import re
 import ctypes
+import socket
+import weakref
 from PySide6.QtCore import (Qt,
                             Signal,
                             QTimer,
@@ -27,8 +29,16 @@ from datetime import datetime
 from ctypes import wintypes
 
 # Constants for taskbar flashing
+FLASHW_STOP = 0x0
+FLASHW_CAPTION = 0x1
 FLASHW_TRAY = 0x2
-FLASHW_TIMERNOFG = 0xC
+FLASHW_ALL = 0x3
+
+# feedparser applies no timeout of its own, so a single unresponsive server can
+# block a whole refresh for minutes and leave the window looking frozen. Feed
+# failures are caught per feed, so timing one out only skips that feed.
+FEED_TIMEOUT = 20
+socket.setdefaulttimeout(FEED_TIMEOUT)
 
 class FLASHWINFO(ctypes.Structure):
     _fields_ = [("cbSize", wintypes.UINT),
@@ -40,13 +50,18 @@ class FLASHWINFO(ctypes.Structure):
 # Load user32.dll for the FlashWindowEx function
 user32 = ctypes.windll.user32
 
-def flash_taskbar_icon(window_handle):
-    """Flashes the taskbar icon when there are unread entries."""
+def flash_taskbar_icon(window_handle, flashing):
+    """Flashes the taskbar icon when there are unread entries.
+
+    ``flashing=False`` sends FLASHW_STOP so a previously started flash ends.
+    """
+    # Note: FLASHW_TIMER/FLASHW_TIMERNOFG make the icon flash forever until an
+    # explicit FLASHW_STOP, so they are deliberately not used here.
     fInfo = FLASHWINFO(
         cbSize=ctypes.sizeof(FLASHWINFO),
         hwnd=window_handle,
-        dwFlags=FLASHW_TRAY | FLASHW_TIMERNOFG,
-        uCount=3,  # Number of flashes
+        dwFlags=FLASHW_ALL if flashing else FLASHW_STOP,
+        uCount=3 if flashing else 0,  # Number of flashes
         dwTimeout=0
     )
     user32.FlashWindowEx(ctypes.byref(fInfo))
@@ -120,8 +135,6 @@ def boostrap_rss_feeds():
                                              indent=2))
 
 class RSSReader(QMainWindow):
-    new_entries_signal = Signal(list)  # Signal to pass the fetched entries to the main thread
-
     def __init__(self):
         boostrap_rss_feeds()
 
@@ -187,6 +200,13 @@ class RSSReader(QMainWindow):
         self.feed_layout.setSpacing(50)
         self.scroll_area.setWidget(self.feed_container)
 
+        # Strong references to the entry frames currently on screen. They are
+        # released in clear_feed_entries(); keeping them in one place is what
+        # makes teardown deterministic instead of relying on deferred deletion.
+        self.entry_containers = []
+        self.fetching = False
+        self.flashing = False
+
         # Timer to simulate refresh the RSS feed entries
         self.timer1 = QTimer(self)
         self.timer1.timeout.connect(self.refresh_feeds)
@@ -198,15 +218,17 @@ class RSSReader(QMainWindow):
         self.timer2.timeout.connect(self.update_unread_entries)
         self.timer2.start(5000)  # Update every 5 seconds
 
-        # Connect the signal to a method that will update the GUI
-        self.new_entries_signal.connect(self.update_feed_entries)
-
         # Display the feeds
         self.refresh_feeds()
 
     def update_unread_entries(self):
         if self.unread_entries > 0:
-            flash_taskbar_icon(self.winId())  # Flash the taskbar icon if unread entries exist
+            # Flash the taskbar icon if unread entries exist
+            flash_taskbar_icon(self.winId(), flashing=True)
+            self.flashing = True
+        elif self.flashing:
+            flash_taskbar_icon(self.winId(), flashing=False)
+            self.flashing = False
 
     def load_rss_feeds(self):
         """Load RSS feed URLs from a JSON file."""
@@ -239,11 +261,10 @@ class RSSReader(QMainWindow):
 
     def update_feed_entries(self, entries):
         """Update the feed entries in the GUI."""
+        self.fetching = False
+
         # Clear existing feed entries
-        for i in reversed(range(self.feed_layout.count())):
-            widget = self.feed_layout.itemAt(i).widget()
-            if widget is not None:
-                widget.deleteLater()
+        self.clear_feed_entries()
 
         # Count unread entries and update the labels
         total_entries = len(entries)
@@ -253,11 +274,13 @@ class RSSReader(QMainWindow):
         self.total_label.setText(f"Total Entries: {total_entries}")
         self.unread_label.setText(f"Unread Entries: {self.unread_entries}")
 
-        # Display each entry in the GUI
+        # Display each entry in the GUI. Everything below is deliberately kept in
+        # local variables: anything parked on ``self`` would keep a PySide6
+        # wrapper alive for a widget that Qt destroys on the next refresh.
         for feed_name, entry in entries:
             border_color = "grey" if entry.title in self.viewed_entries else "blue"
-            self.entry_container = QFrame()
-            self.entry_container.setStyleSheet(f"""
+            container = QFrame()
+            container.setStyleSheet(f"""
                         QFrame {{
                             background-color: #f5f5f5;
                             border: 2px solid {border_color};
@@ -265,63 +288,89 @@ class RSSReader(QMainWindow):
                             padding: 10px;
                         }}
                     """)
-            self.container_layout = QVBoxLayout(self.entry_container)
-            self.container_layout.setSpacing(1)
+            container_layout = QVBoxLayout(container)
+            container_layout.setSpacing(1)
 
             entry_widget = QLabel(f"<b>{feed_name}</b>: <a href='{entry.link}'>{entry.title}</a>")
             entry_widget.setTextFormat(Qt.RichText)
             entry_widget.setTextInteractionFlags(Qt.TextBrowserInteraction)
             entry_widget.setOpenExternalLinks(False)
 
+            # A weak reference avoids a strong reference cycle between the frame
+            # and the lambda, which would keep the destroyed widget reachable.
+            container_ref = weakref.ref(container)
             entry_widget.linkActivated.connect(
                 lambda _,
                        title=entry.title,
-                       container=self.entry_container,
+                       container_ref=container_ref,
                        link=entry.link:
-                self.on_entry_click(title, container, link))
+                self.on_entry_click(title, container_ref(), link))
 
-            self.preview_text = entry.get("summary") or entry.get("description") or "No preview available."
-            self.preview_widget = QLabel(self.preview_text[:200] + '<br>...')
-            self.preview_widget.setWordWrap(True)
-            self.preview_widget.setTextFormat(Qt.RichText)
-            self.preview_widget.setTextInteractionFlags(Qt.TextBrowserInteraction)
-            self.preview_widget.setOpenExternalLinks(False)
-            self.preview_widget.setStyleSheet("font-size: 10pt; color: gray;")
+            preview_text = entry.get("summary") or entry.get("description") or "No preview available."
+            preview_widget = QLabel(preview_text[:200] + '<br>...')
+            preview_widget.setWordWrap(True)
+            preview_widget.setTextFormat(Qt.RichText)
+            preview_widget.setTextInteractionFlags(Qt.TextBrowserInteraction)
+            preview_widget.setOpenExternalLinks(False)
+            preview_widget.setStyleSheet("font-size: 10pt; color: gray;")
 
             parsed_date = get_entry_date_parsed(entry)
             try:
-                self.entry_date = datetime(*parsed_date[:6]).strftime("%Y-%m-%d %H:%M:%S") if parsed_date is not None else "Unknown date"
+                entry_date = datetime(*parsed_date[:6]).strftime("%Y-%m-%d %H:%M:%S") if parsed_date is not None else "Unknown date"
             except (TypeError, ValueError):
-                self.entry_date = "Unknown date"
-            self.date_widget = QLabel(f"Date: {self.entry_date}")
-            self.date_widget.setStyleSheet("font-size: 9pt; color: #666;")
+                entry_date = "Unknown date"
+            date_widget = QLabel(f"Date: {entry_date}")
+            date_widget.setStyleSheet("font-size: 9pt; color: #666;")
 
-            self.container_layout.addWidget(entry_widget)
-            self.container_layout.addWidget(self.date_widget)
-            self.container_layout.addWidget(self.preview_widget)
-            self.feed_layout.addWidget(self.entry_container)
+            container_layout.addWidget(entry_widget)
+            container_layout.addWidget(date_widget)
+            container_layout.addWidget(preview_widget)
+            self.feed_layout.addWidget(container)
+            self.entry_containers.append(container)
 
         # Re-enable buttons after feed is refreshed
         self.mark_all_button.setDisabled(False)
         self.refresh_button.setDisabled(False)
 
+    def clear_feed_entries(self):
+        """Detach and destroy every entry widget currently shown."""
+        # Release the Python references first, otherwise a wrapper outlives the
+        # C++ object and PySide6 later frees memory Qt already released.
+        self.entry_containers.clear()
+        while self.feed_layout.count():
+            widget = self.feed_layout.takeAt(0).widget()
+            if widget is not None:
+                # setParent(None) gives ownership back to Python, so dropping the
+                # last reference destroys the widget. Calling deleteLater() as
+                # well would let Qt and PySide6 free the same object, which
+                # crashes with an access violation on the next refresh.
+                widget.setParent(None)
+
     def refresh_feeds(self):
         """Refresh and display all feeds, sorted by date."""
+        # The 30 minute timer can fire while a fetch is still running; starting
+        # a second QThread would drop the first one while it is still alive.
+        if self.fetching:
+            return
+        self.fetching = True
         self.mark_all_button.setDisabled(True)
         self.refresh_button.setDisabled(True)
 
-        # Start the FeedFetcher thread
+        # Start the FeedFetcher thread. The previous FeedFetcher is only
+        # replaced here, once the guard above confirms its thread has finished.
         self.fetcher_thread = FeedFetcher(self.feeds)
-        self.fetcher_thread.finished.connect(self.new_entries_signal.emit)  # Connect the signal
+        self.fetcher_thread.finished.connect(self.update_feed_entries)
         self.fetcher_thread.start()
 
     def on_entry_click(self, title, entry_container, entry_link):
         """Handle link click to mark the entry as read and update border color."""
         webbrowser.open(entry_link)
-        if title not in self.viewed_entries:
-            self.viewed_entries.add(title)
-            # Change the border color of the clicked entry container to grey
-            entry_container.setStyleSheet("""
+        # entry_container is None when the entry was refreshed away already.
+        if entry_container is None or title in self.viewed_entries:
+            return
+        self.viewed_entries.add(title)
+        # Change the border color of the clicked entry container to grey
+        entry_container.setStyleSheet("""
                 QFrame {
                     background-color: #f5f5f5;
                     border: 2px solid grey;
@@ -329,11 +378,11 @@ class RSSReader(QMainWindow):
                     padding: 10px;
                 }
             """)
-            # Save viewed entries after marking this entry as read
-            self.save_viewed_entries()
+        # Save viewed entries after marking this entry as read
+        self.save_viewed_entries()
 
-            self.unread_entries -= 1
-            self.unread_label.setText(f"Unread Entries: {self.unread_entries}")
+        self.unread_entries -= 1
+        self.unread_label.setText(f"Unread Entries: {self.unread_entries}")
 
     def mark_all_as_read(self):
         """Mark all displayed entries as read and update unread count."""
@@ -346,6 +395,8 @@ class RSSReader(QMainWindow):
                 if isinstance(title_label, QLabel):
                     # Extract the title from the label's HTML content
                     title_text = extract_title(title_label.text())
+                    if title_text is None:
+                        continue
                     self.viewed_entries.add(title_text)
 
                     # Change the border color of the frame to grey
