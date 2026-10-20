@@ -1,6 +1,7 @@
 # pyAggregatedRssFeedReader
 A simple aggregator for multiple RSS feeds; It has very handy features, like:
 - it marks the already read entries
+- can mark individual entries as read or unread (via a button on each entry)
 - it will check for new entries every 30 minutes
 - it displays a counter with all unread entries/ total entries
 - can set all the entries as read (via an easy-to-use button)
