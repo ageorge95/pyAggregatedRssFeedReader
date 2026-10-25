@@ -11,8 +11,8 @@ A simple aggregator for multiple RSS feeds; It has very handy features, like:
 
 # Usage
 - [end-user] Can be used via the bundled executable (available in [Releases](https://github.com/ageorge95/pyAggregatedRssFeedReader/releases))
-- [end-user] Can be used by running `Install.bat` and after that`START_RSSreader.bat`
-- [dev] Can be built as an exe by running `Install.bat` and after that `BUILD_release.bat`
+- [end-user] Can be used by running `powershell -ExecutionPolicy Bypass -File _install\install.ps1` and after that `START_RSSreader.bat`
+- [dev] Can be built as an exe by running `powershell -ExecutionPolicy Bypass -File _install\install.ps1` and after that `BUILD_release.bat`
 
 # GUI layout
 

@@ -8,3 +8,5 @@
 /rss_feeds.json
 /build
 /dist
+/activate.ps1
+/activate.sh
